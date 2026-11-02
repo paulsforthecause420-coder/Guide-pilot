@@ -1,0 +1,44 @@
+{
+  "name": "Check whether a service is running",
+  "description": "A read-only terminal check: inspect the service status and confirm the result yourself. Nothing is installed, changed or restarted.",
+  "version": 1,
+  "objective": "Check why nginx is not responding",
+  "app_hint": "terminal",
+  "tags": ["terminal", "read-only"],
+  "steps": [
+    {
+      "title": "Inspect the service status",
+      "instruction": "Run this read-only status check in a terminal and look for 'active (running)' or an error.",
+      "action_type": "command",
+      "target_description": "Terminal",
+      "target_role": "",
+      "text_template": "systemctl status nginx --no-pager",
+      "expected_result": "The status line reports active (running), or names the failure reason.",
+      "why": "Reading the status explains the failure without changing anything.",
+      "verification": [
+        {
+          "kind": "user_confirmation",
+          "params": { "label": "service status" },
+          "required": true
+        }
+      ]
+    },
+    {
+      "title": "Read the recent log lines",
+      "instruction": "Run this read-only log query and read the last lines for the error.",
+      "action_type": "command",
+      "target_description": "Terminal",
+      "target_role": "",
+      "text_template": "journalctl -u nginx --no-pager -n 40",
+      "expected_result": "The log shows the cause of the failure (port in use, permission denied, config error).",
+      "why": "The log usually names the exact cause; guessing at fixes wastes time.",
+      "verification": [
+        {
+          "kind": "user_confirmation",
+          "params": { "label": "log lines" },
+          "required": true
+        }
+      ]
+    }
+  ]
+}

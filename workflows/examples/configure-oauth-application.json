@@ -1,0 +1,90 @@
+{
+  "name": "Configure an OAuth application",
+  "description": "Fill in an application name, callback URL and region, enable telemetry, then save and confirm the success message. Values are supplied by you when the workflow starts.",
+  "version": 1,
+  "objective": "Walk me through configuring this application",
+  "app_hint": "guidepilot-demo",
+  "tags": ["demo", "form", "oauth"],
+  "steps": [
+    {
+      "title": "Enter App Name",
+      "instruction": "Click the 'App Name' field and type the exact value shown.",
+      "action_type": "type",
+      "target_description": "App Name",
+      "target_role": "entry",
+      "expected_result": "'App Name' contains the value you supplied.",
+      "why": "The form cannot be saved without a name.",
+      "verification": [
+        {
+          "kind": "element_value_equals",
+          "params": { "label": "App Name" },
+          "required": true
+        }
+      ]
+    },
+    {
+      "title": "Enter Callback URL",
+      "instruction": "Click the 'Callback URL' field and type the exact value shown.",
+      "action_type": "type",
+      "target_description": "Callback URL",
+      "target_role": "entry",
+      "expected_result": "'Callback URL' contains the value you supplied.",
+      "why": "The provider rejects a callback that does not start with https://.",
+      "verification": [
+        {
+          "kind": "element_value_equals",
+          "params": { "label": "Callback URL" },
+          "required": true
+        }
+      ]
+    },
+    {
+      "title": "Choose Region",
+      "instruction": "Open the 'Region' dropdown and choose the region you need.",
+      "action_type": "select",
+      "target_description": "Region",
+      "target_role": "combo box",
+      "expected_result": "'Region' shows the selected option.",
+      "why": "Data residency is decided here.",
+      "verification": [
+        {
+          "kind": "element_value_equals",
+          "params": { "label": "Region" },
+          "required": true
+        }
+      ]
+    },
+    {
+      "title": "Review Enable telemetry",
+      "instruction": "Set the 'Enable telemetry' checkbox according to your policy, then confirm.",
+      "action_type": "check",
+      "target_description": "Enable telemetry",
+      "target_role": "check box",
+      "expected_result": "'Enable telemetry' is set as you intended.",
+      "why": "This decides whether usage data leaves your machine.",
+      "verification": [
+        {
+          "kind": "user_confirmation",
+          "params": { "label": "Enable telemetry" },
+          "required": true
+        }
+      ]
+    },
+    {
+      "title": "Click Save Configuration",
+      "instruction": "Click the 'Save Configuration' button.",
+      "action_type": "click",
+      "target_description": "Save Configuration",
+      "target_role": "push button",
+      "expected_result": "The application shows 'Configuration saved successfully'.",
+      "why": "Nothing is stored until the form is submitted.",
+      "verification": [
+        {
+          "kind": "text_present",
+          "params": { "text": "Configuration saved successfully" },
+          "required": true
+        }
+      ]
+    }
+  ]
+}
