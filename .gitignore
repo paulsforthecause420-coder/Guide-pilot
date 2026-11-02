@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+desktop/dist/
+packaging/build/stage/
+packaging/build/deb/
+packaging/build/GuidePilot.AppDir/
+packaging/build/*.deb
+packaging/build/*.tar.gz
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Local runtime state, logs and databases
+*.log
+*.db

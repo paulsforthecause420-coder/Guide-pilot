@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guidepilot.local/schemas/guidance.schema.json",
+  "title": "Guidance",
+  "description": "A single actionable instruction produced by a model adapter. Every field is validated before the UI or overlay may use it.",
+  "type": "object",
+  "required": ["step_id", "instruction", "action_type", "expected_result", "verification_method", "confidence"],
+  "additionalProperties": false,
+  "properties": {
+    "step_id": { "type": "string", "pattern": "^step-[0-9]{3}$" },
+    "instruction": { "type": "string", "minLength": 1, "maxLength": 600 },
+    "action_type": {
+      "type": "string",
+      "enum": ["click", "type", "select", "check", "scroll", "command", "confirm", "observe", "manual"]
+    },
+    "target": {
+      "type": ["object", "null"],
+      "required": ["label", "element_role"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "element_role": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "bounding_box": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "coordinate_space": {
+          "type": "string",
+          "enum": ["physical_screen", "capture_pixels", "normalized_image"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "text_to_enter": {
+      "type": ["object", "null"],
+      "required": ["value"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "string", "maxLength": 4000 },
+        "field_label": { "type": "string", "maxLength": 200 },
+        "source": {
+          "type": "string",
+          "enum": ["user_provided", "project_config", "derived", "documentation", "model_assumption", "unknown"]
+        },
+        "sensitive": { "type": "boolean" },
+        "explanation": { "type": "string", "maxLength": 600 }
+      }
+    },
+    "expected_result": { "type": "string", "minLength": 1, "maxLength": 400 },
+    "verification_method": {
+      "type": "string",
+      "enum": [
+        "screen_state_comparison",
+        "element_appearance",
+        "element_disappearance",
+        "text_presence",
+        "field_value",
+        "window_title",
+        "user_confirmation",
+        "none"
+      ]
+    },
+    "requires_confirmation": { "type": "boolean" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "why": { "type": "string", "maxLength": 800 },
+    "notes": { "type": "array", "items": { "type": "string", "maxLength": 400 }, "maxItems": 10 }
+  }
+}

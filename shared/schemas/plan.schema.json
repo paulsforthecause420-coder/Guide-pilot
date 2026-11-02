@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guidepilot.local/schemas/plan.schema.json",
+  "title": "TaskPlan",
+  "description": "Structured plan returned by a reasoning model. GuidePilot rejects plans that do not satisfy this schema instead of executing speculative instructions.",
+  "type": "object",
+  "required": ["title", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "summary": { "type": "string", "maxLength": 800 },
+    "missing_information": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["field", "question"],
+        "additionalProperties": false,
+        "properties": {
+          "field": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "question": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "sensitive": { "type": "boolean" }
+        }
+      },
+      "maxItems": 12
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "required": ["title", "instruction", "action_type", "expected_result"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "instruction": { "type": "string", "minLength": 1, "maxLength": 600 },
+          "action_type": {
+            "type": "string",
+            "enum": ["click", "type", "select", "check", "scroll", "command", "confirm", "observe", "manual"]
+          },
+          "target_label": { "type": "string", "maxLength": 200 },
+          "target_role": { "type": "string", "maxLength": 60 },
+          "text_value": {
+            "type": ["object", "null"],
+            "required": ["value", "source"],
+            "additionalProperties": false,
+            "properties": {
+              "value": { "type": "string", "maxLength": 4000 },
+              "source": {
+                "type": "string",
+                "enum": ["user_provided", "project_config", "derived", "documentation", "model_assumption", "unknown"]
+              },
+              "sensitive": { "type": "boolean" },
+              "explanation": { "type": "string", "maxLength": 600 }
+            }
+          },
+          "expected_result": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "why": { "type": "string", "maxLength": 800 },
+          "verification": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "required": ["kind"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "element_appears",
+                    "element_disappears",
+                    "text_present",
+                    "element_value_equals",
+                    "window_title_matches",
+                    "screen_changed",
+                    "user_confirmation"
+                  ]
+                },
+                "params": { "type": "object" },
+                "required": { "type": "boolean" },
+                "description": { "type": "string", "maxLength": 300 }
+              }
+            }
+          },
+          "requires_user_input": { "type": "boolean" },
+          "risk": { "type": "string", "enum": ["none", "inspect", "modify", "destructive"] }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "guidepilot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GuidePilot — screen-aware AI desktop instructor",
+  "scripts": {
+    "dev": "npm run build:renderer && ./scripts/dev-desktop.sh",
+    "build": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "vite build --config desktop/vite.config.ts",
+    "build:electron": "tsc -p desktop/tsconfig.json",
+    "test": "npm run test:backend && npm run test:node",
+    "test:backend": "python3 -m pytest backend/tests -q",
+    "test:node": "npm run build:electron --silent && node --test desktop/tests/*.test.mjs",
+    "demo": "./scripts/run-demo.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^45.2.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  }
+}
