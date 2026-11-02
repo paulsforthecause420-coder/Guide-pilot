@@ -320,8 +320,19 @@ class AtspiClient:
             now = util.now_ms()
             if self._address and now - self._address_checked_at < 30000:
                 return self._address
+            before = self._address
             self._address = discover_bus_address()
             self._address_checked_at = now
+            if _DEBUG_DIAGNOSTICS and self._address != before:
+                # Which bus a process ended up on decides what its Text calls can
+                # answer, and the environment can hand a child a different answer
+                # than an interactive shell gets.
+                print(
+                    f"[a11y] pid={os.getpid()} env={os.environ.get('AT_SPI_BUS_ADDRESS') or '<unset>'} "
+                    f"resolved={self._address or '<none>'}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             return self._address
 
     def _call(self, dest: str, path: str, iface: str, method: str, *args: str, timeout: float = 3.0) -> Any:
