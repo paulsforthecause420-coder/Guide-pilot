@@ -1,0 +1,11 @@
+{
+  "name": "guidepilot-demo-app",
+  "productName": "GuidePilot Demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic test application for GuidePilot acceptance testing",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron --no-sandbox --force-renderer-accessibility ."
+  }
+}

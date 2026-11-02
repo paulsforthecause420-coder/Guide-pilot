@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>GuidePilot Demo Application</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1 id="app-heading">Application Configuration</h1>
+        <p class="muted">Fill in the form, then save your configuration.</p>
+      </header>
+
+      <section aria-labelledby="app-heading">
+        <form id="config-form" novalidate>
+          <div class="field">
+            <label for="app-name">App Name</label>
+            <input id="app-name" name="appName" type="text" aria-label="App Name" autocomplete="off" describedby="app-name-help" />
+            <p id="app-name-help" class="hint">Shown in the application header.</p>
+          </div>
+
+          <div class="field">
+            <label for="callback-url">Callback URL</label>
+            <input id="callback-url" name="callbackUrl" type="url" aria-label="Callback URL" autocomplete="off" placeholder="https://example.com/api/oauth/callback" />
+            <p class="hint">Must start with https://</p>
+          </div>
+
+          <div class="field">
+            <label for="region">Region</label>
+            <select id="region" name="region" aria-label="Region">
+              <option value="">Choose a region</option>
+              <option value="EU">EU</option>
+              <option value="US">US</option>
+              <option value="APAC">APAC</option>
+            </select>
+          </div>
+
+          <div class="field inline">
+            <input id="telemetry" name="telemetry" type="checkbox" aria-label="Enable telemetry" />
+            <label for="telemetry">Enable telemetry</label>
+          </div>
+
+          <div class="field inline">
+            <input id="strict-mode" name="strictMode" type="checkbox" aria-label="Strict mode" />
+            <label for="strict-mode">Strict mode</label>
+          </div>
+
+          <div class="actions">
+            <button id="save-button" type="submit" aria-label="Save Configuration">Save Configuration</button>
+            <button id="advanced-button" type="button" aria-label="Advanced Settings">Advanced Settings</button>
+            <button id="reset-button" type="button" class="secondary" aria-label="Reset Form">Reset Form</button>
+          </div>
+        </form>
+
+        <div id="alert-box" role="alert" aria-live="assertive" class="alert" hidden></div>
+        <div id="status-box" role="status" aria-live="polite" class="status" hidden></div>
+        <div id="loading" role="status" aria-live="polite" class="loading" hidden>Saving configuration…</div>
+      </section>
+
+      <section id="summary-section" aria-labelledby="summary-heading" hidden>
+        <h2 id="summary-heading">Saved configuration</h2>
+        <dl id="summary-list"></dl>
+      </section>
+    </main>
+
+    <div id="dialog-backdrop" class="dialog-backdrop" hidden>
+      <div role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-label="Advanced Settings" class="dialog">
+        <h2 id="dialog-title">Advanced Settings</h2>
+        <p class="muted">These options change how strictly the application validates input.</p>
+        <div class="field inline">
+          <input id="dialog-strict" type="checkbox" aria-label="Enable strict validation" />
+          <label for="dialog-strict">Enable strict validation</label>
+        </div>
+        <div class="actions">
+          <button id="dialog-apply" type="button" aria-label="Apply Advanced Settings">Apply</button>
+          <button id="dialog-cancel" type="button" class="secondary" aria-label="Cancel Dialog">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
