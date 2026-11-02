@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=GuidePilot
+GenericName=Screen guide
+Comment=Screen-aware step-by-step guidance for the application in front of you
+Exec=guidepilot
+Icon=guidepilot
+Terminal=false
+Categories=Utility;Education;
+Keywords=guide;tutorial;assistant;accessibility;overlay;
+StartupNotify=true
+StartupWMClass=GuidePilot
+X-GNOME-UsesNotifications=false
