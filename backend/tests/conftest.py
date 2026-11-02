@@ -234,6 +234,22 @@ class FakeDisplay:
         }
 
 
+class FakeOcr:
+    """OCR that returns whatever text the test asks for, and records the crops."""
+
+    def __init__(self, text: str | None = None, available: bool = True) -> None:
+        self.text = text
+        self.enabled = available
+        self.crops: list[bytes] = []
+
+    def available(self) -> tuple[bool, str]:
+        return (self.enabled, "" if self.enabled else "tesseract is not installed")
+
+    def read_text(self, png_bytes: bytes) -> str | None:
+        self.crops.append(png_bytes)
+        return self.text
+
+
 class FakeObserver:
     """Returns whatever observation the test tells it to return.
 
@@ -244,6 +260,7 @@ class FakeObserver:
         self._screen = screen
         self.calls: list[dict[str, Any]] = []
         self.backend = FakeCaptureBackend()
+        self.ocr = FakeOcr(available=False)
         self._latest: Observation | None = None
         # The API reads display capabilities for its /capabilities and
         # /settings responses, so the fake exposes the same shape.

@@ -69,6 +69,32 @@ class OcrEngine:
             with contextlib.suppress(OSError):
                 temp_path.unlink()
 
+    def read_text(self, png_bytes: bytes) -> str | None:
+        """Read one field's text from its pixels, as a single line.
+
+        Used only when the accessibility tree cannot answer: OCR is slower and
+        approximate, so it may confirm a value but is never treated as proof that
+        a value is wrong.
+        """
+        if not self.binary or not png_bytes:
+            return None
+        handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        temp_path = Path(handle.name)
+        try:
+            handle.write(png_bytes)
+            handle.close()
+            # psm 7 treats the image as a single line, which is what a text field
+            # is; psm 6 would try to find paragraphs in a 400x40 crop.
+            result = util.run_cmd([self.binary, str(temp_path), "stdout", "--psm", "7"], timeout=25)
+            if not result.ok:
+                self.last_error = util.truncated((result.stderr or "").strip(), 200)
+                return None
+            text = " ".join((result.stdout or "").split())
+            return text or None
+        finally:
+            with contextlib.suppress(OSError):
+                temp_path.unlink()
+
     def extract_elements(
         self,
         png_bytes: bytes,

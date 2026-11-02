@@ -41,6 +41,9 @@ cd backend && python3 -m pytest tests/test_engine.py -q -k blocked
 * `geometry.test.mjs` — monitor choice for straddling rectangles, DIP conversion
   with display scaling, second-monitor offsets, clamping, label placement
   flipping around the target, docking, compact sizing, opacity normalisation.
+* `test_ocr.py` — the single-field OCR reader, driven by a stub binary: one line
+  in, cleaned text out, failures surfaced instead of swallowed, and a missing
+  Tesseract explained rather than crashing.
 * `ipc.test.mjs` — static checks on the sources: every channel the preload
   invokes has a main-process handler and vice versa; `contextIsolation` on,
   `nodeIntegration` off, `sandbox` on; the overlay window is click-through and

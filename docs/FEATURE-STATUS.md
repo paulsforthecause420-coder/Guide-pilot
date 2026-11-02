@@ -33,6 +33,7 @@ demo application in `demo-app/`.
 | Capability | Requirement | Behaviour when missing |
 | --- | --- | --- |
 | OCR fallback for apps with no accessibility | `tesseract-ocr` | Capability reports `available: false` with the reason; guidance relies on accessibility; not installed on the reference machine |
+| Reading a field's value from its pixels when the tree has no text | `tesseract-ocr` | An exact OCR match verifies the step; a different reading says "not sure" instead of accusing the user; sensitive fields are never read this way. Not installed on the reference machine, so this path is covered by tests with a stub binary only |
 | Native click-through overlay | X11 (or XWayland with X11 placement) | Falls back to showing the target coordinates in the panel (`overlay_mode: in-window`) |
 | Wayland capture | `grim` | Falls back to X11 tools when XWayland is present; otherwise capture reports unavailable |
 | Spoken steps | `espeak-ng`, `espeak` or `spd-say` | Detected as available here via `espeak`; disabled by default in settings |
@@ -57,17 +58,17 @@ demo application in `demo-app/`.
   highlighted but their field contents cannot be verified; the app says so rather
   than guessing.
 * The live acceptance run stops at step 1 on this machine (it never claims an
-  unverified pass). Measured with `GUIDEPILOT_DEBUG_A11Y=1` and
-  `GUIDEPILOT_DEBUG_VERIFY=1`, two things are true at the same time inside the
-  running product, while a standalone client reads the same field perfectly:
-  Chromium answers `Text.GetText` with an empty string for an entry that visibly
-  contains text, and the cropped field pixels are a flat block, because
-  GuidePilot's own highlight is drawn over the field it is asking about. Running
-  the identical launch and read outside GuidePilot yields the real value, so the
-  trigger is the overlay window sitting on top of the target. Until the overlay
-  is hidden for the measurement (or OCR reads the text back with
-  `tesseract-ocr`), a text step on a Chromium target can only be reported as
-  "cannot confirm", which is what the run reports.
+  unverified pass). Inside the running product, Chromium answers `Text.GetText`
+  with an empty string for an entry that visibly contains text, while the same
+  field reads correctly from a standalone client. Each candidate cause has been
+  excluded by measurement: a stale/ghost application instance (a real bug, now
+  fixed), a covering window (a plain overlay changes nothing), GuidePilot merely
+  running (no change), a different accessibility bus (identical address and
+  GUID), and concurrent snapshots (26 reads under load, none empty). The
+  remaining candidate is the timing of the `IsEnabled` announcement, which the
+  service makes at plan time rather than at read time. With `tesseract-ocr`
+  installed the OCR value check would confirm or disconfirm the field from
+  pixels; it is not installed here, so the run reports "cannot confirm".
 * GTK/Qt applications publish no accessible tree on this machine at all (the GTK
   ATK bridge module is not installed), so only Chromium/Electron targets were
   available for live testing.

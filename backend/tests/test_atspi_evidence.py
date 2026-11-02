@@ -12,7 +12,7 @@ import copy
 import struct
 import zlib
 
-from conftest import FORM_ELEMENTS, FakeObserver, make_observation, solid_png
+from conftest import FORM_ELEMENTS, FakeObserver, FakeOcr, make_observation, solid_png
 
 from guidepilot.accessibility.atspi import AtspiApp, AtspiClient, fields_unreadable
 from guidepilot.providers.gateway import ModelGateway
@@ -120,6 +120,68 @@ def test_toolkits_without_a_pid_still_ground_by_name_and_title():
     app = AtspiApp(dest=":1.5", name="Thunar", pid=None)
     client = _StubClient([app], {app.dest: [("Downloads", app.dest, "/root")]})
     assert client.find_app("thunar", "Downloads", pid=4242) is app
+
+
+def test_ocr_verifies_a_field_the_tree_cannot_read(settings, db):
+    """No field text in the tree, exact text in the pixels: that is a pass."""
+    observer = FakeObserver(make_observation(values_unavailable=True))
+    observer.backend.png = solid_png((255, 255, 255))
+    observer.ocr = FakeOcr("GuidePilot Acceptance")
+    engine = build_engine(settings, db, observer)
+    engine.create_task("Walk me through configuring this application", context_values=CONTEXT)
+
+    observer.backend.png = solid_png((0, 0, 0))
+    state = engine.verify_current()
+    verification = state["task"]["verification"]
+    assert verification["outcome"] == "VERIFIED", verification
+    assert "pixels" in verification["summary"]
+    assert any(e["rule"] == "ocr_value" and e["passed"] is True for e in verification["evidence"])
+    assert observer.ocr.crops, "the field's pixels must have been read"
+
+
+def test_a_misread_does_not_accuse_the_user(settings, db):
+    """OCR is approximate; a different reading says "not sure", not "wrong"."""
+    observer = FakeObserver(make_observation(values_unavailable=True))
+    observer.backend.png = solid_png((255, 255, 255))
+    observer.ocr = FakeOcr("GuidePilot Acceptanc")
+    engine = build_engine(settings, db, observer)
+    engine.create_task("Walk me through configuring this application", context_values=CONTEXT)
+
+    observer.backend.png = solid_png((0, 0, 0))
+    state = engine.verify_current()
+    verification = state["task"]["verification"]
+    assert verification["outcome"] == "INCONCLUSIVE"
+    assert state["task"]["steps"][0]["status"] != "failed"
+
+
+def test_ocr_never_overturns_a_readable_wrong_value(settings, db):
+    """When the tree says the field holds something else, that verdict stands."""
+    observer = FakeObserver(
+        make_observation(_filled_elements(**{"App Name": "Something Else"}), values_unavailable=False)
+    )
+    observer.backend.png = solid_png((255, 255, 255))
+    observer.ocr = FakeOcr("GuidePilot Acceptance")
+    engine = build_engine(settings, db, observer)
+    engine.create_task("Walk me through configuring this application", context_values=CONTEXT)
+
+    observer.backend.png = solid_png((0, 0, 0))
+    state = engine.verify_current()
+    verification = state["task"]["verification"]
+    assert verification["outcome"] == "FAILED"
+    assert observer.ocr.crops == [], "OCR must not run when the tree gave an answer"
+
+
+def test_ocr_is_skipped_when_it_is_not_installed(settings, db):
+    observer = FakeObserver(make_observation(values_unavailable=True))
+    observer.backend.png = solid_png((255, 255, 255))
+    observer.ocr = FakeOcr("GuidePilot Acceptance", available=False)
+    engine = build_engine(settings, db, observer)
+    engine.create_task("Walk me through configuring this application", context_values=CONTEXT)
+
+    observer.backend.png = solid_png((0, 0, 0))
+    state = engine.verify_current()
+    assert state["task"]["verification"]["outcome"] == "INCONCLUSIVE"
+    assert observer.ocr.crops == []
 
 
 def _png_with_glyphs(width: int = 120, height: int = 40, glyphs: int = 0, bar: int = 0) -> bytes:

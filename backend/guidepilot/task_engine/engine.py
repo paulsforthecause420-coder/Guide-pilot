@@ -348,6 +348,75 @@ class TaskEngine:
                 return True
         return False
 
+    @staticmethod
+    def _normalize_for_ocr(text: str) -> str:
+        return " ".join(text.replace("\u00a0", " ").split()).strip().lower()
+
+    def _ocr_value_evidence(self, step: Step, result: VerificationResult) -> VerificationResult | None:
+        """Read a field's value from its pixels when the tree cannot answer.
+
+        Only positive evidence is taken from OCR: an exact match with the value the
+        user supplied verifies the step, while a different reading stays
+        inconclusive, because OCR misreads are common and accusing the user on the
+        strength of one would be worse than admitting the reading is unreliable.
+        Sensitive fields are never read this way.
+        """
+        if result.outcome == VerificationOutcome.VERIFIED:
+            return None
+        if result.outcome == VerificationOutcome.FAILED and not self._failed_on_blank_value(result):
+            # The tree already answered, and it said the wrong thing. A second,
+            # rougher opinion must not be used to overturn readable evidence.
+            return None
+        rule = next(
+            (
+                r
+                for r in step.rules
+                if r.kind == "element_value_equals" and str((r.params or {}).get("value") or "").strip()
+            ),
+            None,
+        )
+        if rule is None:
+            return None
+        label = str((rule.params or {}).get("label") or "")
+        if label and is_sensitive_label(label):
+            return None
+        expected = str((rule.params or {}).get("value") or "")
+        baseline = self._field_baselines.get(step.id)
+        if baseline is None:
+            return None
+        ocr = getattr(self.observer, "ocr", None)
+        if ocr is None:
+            return None
+        available, _reason = ocr.available()
+        if not available:
+            return None
+        pixels = self._field_pixels(Rect(*[int(v) for v in baseline[0]]))
+        if pixels is None:
+            return None
+        try:
+            text = ocr.read_text(pixels)
+        except Exception:  # pragma: no cover - OCR is best effort
+            return None
+        if not text:
+            return None
+        label_text = step.target_description or step.title or "the field"
+        new_evidence = list(result.evidence) + [
+            Evidence("ocr_value", None, f"Read '{util.truncated(text, 60)}' from the field's pixels")
+        ]
+        if self._normalize_for_ocr(text) == self._normalize_for_ocr(expected):
+            new_evidence[-1] = Evidence("ocr_value", True, f"Read '{util.truncated(text, 60)}' from the field's pixels")
+            return VerificationResult(
+                VerificationOutcome.VERIFIED,
+                new_evidence,
+                f"Verified: '{label_text}' contains the expected value (read from its pixels, since this application does not publish field text)",
+            )
+        return VerificationResult(
+            VerificationOutcome.INCONCLUSIVE,
+            new_evidence,
+            f"'{label_text}' looks filled, but the text I could read back from its pixels "
+            f"('{util.truncated(text, 60)}') does not match closely enough to be sure. Tell me to confirm if it is correct.",
+        )
+
     def _refine_with_pixels(self, step: Step, result: VerificationResult) -> VerificationResult:
         """Make an unreadable text field's outcome more useful, never more optimistic.
 
@@ -805,7 +874,10 @@ class TaskEngine:
                 # it must not replace a genuine pass or a later pass.
                 result = retry
         if result.outcome in (VerificationOutcome.INCONCLUSIVE, VerificationOutcome.FAILED):
-            result = self._refine_with_pixels(step, result)
+            # The accessibility tree had nothing to say about this field, so the
+            # pixels are asked; an unreadable answer still falls back to the
+            # pixel comparison that only distinguishes "typed" from "not typed".
+            result = self._ocr_value_evidence(step, result) or self._refine_with_pixels(step, result)
         self._apply_verification(task, step, result)
         self._persist(task)
         return self.state_payload(task)
