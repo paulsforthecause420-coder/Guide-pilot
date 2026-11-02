@@ -9,10 +9,12 @@ claims a success that was never observed. These tests pin the distinction.
 from __future__ import annotations
 
 import copy
+import struct
+import zlib
 
 from conftest import FORM_ELEMENTS, FakeObserver, make_observation, solid_png
 
-from guidepilot.accessibility.atspi import fields_unreadable
+from guidepilot.accessibility.atspi import AtspiApp, AtspiClient, fields_unreadable
 from guidepilot.providers.gateway import ModelGateway
 from guidepilot.task_engine.engine import TaskEngine
 from guidepilot.task_engine.planner import TaskPlanner
@@ -73,6 +75,100 @@ def test_unreadable_field_reports_a_visible_change_without_claiming_success(sett
     assert "visibly changed" in verification["summary"]
     assert "cannot read the exact value back" in verification["summary"]
     assert state["task"]["steps"][0]["status"] != "verified"
+
+
+class _StubClient(AtspiClient):
+    """A client whose bus is a list, so matching can be tested without a desktop."""
+
+    def __init__(self, apps, frames):
+        super().__init__()
+        self._stub_apps = apps
+        self._stub_frames = frames
+
+    def apps(self, force: bool = False):
+        return list(self._stub_apps)
+
+    def _frame_titles(self, app):
+        return self._stub_frames.get(app.dest, [])
+
+
+def test_the_application_is_chosen_by_process_not_by_name_or_title():
+    """A dead instance that never unregistered must not be read in the live one's place.
+
+    Two `electron` apps can share the same window title; only the pid says which
+    one owns the window in front of the user, and grounding on the wrong one
+    yields stale rectangles and stale field values.
+    """
+    ghost = AtspiApp(dest=":1.17041", name="electron", pid=None)
+    live = AtspiApp(dest=":1.24942", name="electron", pid=4242)
+    frames = {ghost.dest: [("GuidePilot Demo", ghost.dest, "/root")],
+              live.dest: [("GuidePilot Demo", live.dest, "/root")]}
+
+    client = _StubClient([ghost, live], frames)
+    assert client.find_app("electron", "GuidePilot Demo", pid=4242) is live
+
+
+def test_a_window_whose_process_owns_no_tree_grounds_on_nothing():
+    """When the bus reports pids and none matches, refusing beats guessing."""
+    ghost = AtspiApp(dest=":1.17041", name="electron", pid=999)
+    client = _StubClient([ghost], {ghost.dest: [("GuidePilot Demo", ghost.dest, "/root")]})
+    assert client.find_app("electron", "GuidePilot Demo", pid=4242) is None
+
+
+def test_toolkits_without_a_pid_still_ground_by_name_and_title():
+    """A toolkit that publishes no ProcessId keeps the old behaviour."""
+    app = AtspiApp(dest=":1.5", name="Thunar", pid=None)
+    client = _StubClient([app], {app.dest: [("Downloads", app.dest, "/root")]})
+    assert client.find_app("thunar", "Downloads", pid=4242) is app
+
+
+def _png_with_glyphs(width: int = 120, height: int = 40, glyphs: int = 0, bar: int = 0) -> bytes:
+    """A field-coloured PNG with a band of dark 'text' pixels, or a caret bar."""
+    rows = []
+    for y in range(height):
+        row = bytearray()
+        row.append(0)  # filter byte
+        for x in range(width):
+            text = 12 <= y < 24 and 4 <= x < 4 + glyphs * 5
+            caret = bar and 12 <= y < 26 and 4 <= x < 4 + bar
+            row.extend(b"\x10\x10\x10" if (text or caret) else b"\xff\xff\xff")
+        rows.append(bytes(row))
+    raw = b"".join(rows)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+def test_typed_text_in_a_field_is_noticed_even_though_it_is_tiny(settings, db):
+    """Twenty characters cover far less than 2% of a field, and still count.
+
+    The whole-frame perceptual grid cannot see them: the field reads as
+    unchanged and the user is told they typed nothing.
+    """
+    observer = FakeObserver(make_observation(_filled_elements(), values_unavailable=False))
+    observer.backend.png = _png_with_glyphs()
+    engine = build_engine(settings, db, observer)
+    engine.create_task("Walk me through configuring this application", context_values=CONTEXT)
+
+    observer.backend.png = _png_with_glyphs(glyphs=8)
+    state = engine.verify_current()
+    verification = state["task"]["verification"]
+    assert verification["outcome"] == "INCONCLUSIVE", verification
+    assert "visibly changed" in verification["summary"]
+
+
+def test_an_empty_field_that_stays_empty_is_not_reported_as_typed(settings, db):
+    observer = FakeObserver(make_observation(_filled_elements(), values_unavailable=False))
+    observer.backend.png = _png_with_glyphs()
+    engine = build_engine(settings, db, observer)
+    engine.create_task("Walk me through configuring this application", context_values=CONTEXT)
+
+    observer.backend.png = _png_with_glyphs(bar=1)  # a blinker, nothing more
+    state = engine.verify_current()
+    assert state["task"]["verification"]["outcome"] == "FAILED"
 
 
 def _filled_elements(**values: str) -> list:

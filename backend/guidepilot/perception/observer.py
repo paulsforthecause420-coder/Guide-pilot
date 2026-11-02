@@ -352,6 +352,10 @@ class ScreenObserver:
                 app_hint=hint,
                 window_title=active.title if active else None,
                 window_rect=active.rect if (active and scope == "active_window") else None,
+                # Anchors the tree to the process that owns the window being
+                # observed, so a stale registration of the same application can
+                # never be read in its place.
+                window_pid=active.pid if active else None,
             )
         except Exception as exc:  # pragma: no cover - defensive
             sources["accessibility"] = {"used": False, "reason": str(exc)}

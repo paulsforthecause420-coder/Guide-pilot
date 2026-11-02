@@ -101,6 +101,40 @@ def compare(previous: FrameSignature | None, current: FrameSignature) -> tuple[f
     return min(1.0, change_ratio + 0.0), min(1.0, hamming)
 
 
+def ink_count(png_bytes: bytes) -> int | None:
+    """Count glyph-like pixels: those far from the region's dominant tone.
+
+    A 16x16 perceptual grid is the right tool for whole screens and the wrong one
+    for a text field: twenty typed characters move the average luminance of a few
+    cells by less than a single shade, so a filled field reads as unchanged. On
+    the full-resolution crop the same text is hundreds of pixels that differ
+    sharply from the field's background, while a blinking caret adds only a
+    couple of dozen - enough to separate "something was typed" from "the cursor
+    blinked".
+    """
+    if not PIL_AVAILABLE or not png_bytes:
+        return None
+    try:
+        with Image.open(io.BytesIO(png_bytes)) as image:
+            data = image.convert("L").tobytes()
+    except Exception:
+        return None
+    if not data:
+        return None
+    histogram = [0] * 256
+    for value in data:
+        histogram[value] += 1
+    total = len(data)
+    cumulative = 0
+    median = 0
+    for value, count in enumerate(histogram):
+        cumulative += count
+        if cumulative * 2 >= total:
+            median = value
+            break
+    return sum(count for value, count in enumerate(histogram) if abs(value - median) > 40)
+
+
 def image_size(png_bytes: bytes) -> tuple[int, int]:
     if PIL_AVAILABLE and png_bytes:
         try:

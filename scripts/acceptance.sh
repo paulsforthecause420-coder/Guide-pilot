@@ -29,6 +29,20 @@ done
 echo "==> building"
 npm run build --silent
 
+# Two instances of the demo (a leftover from an earlier run, say) share a window
+# title and an accessibility application name: the pointer would land in one
+# while the assistant read the other, and every verification would be measured
+# against the wrong window. That ambiguity is not a product failure, so it is
+# rejected up front instead of producing a misleading result.
+# xdotool exits non-zero when nothing matches, and this script runs under
+# pipefail, so the count is taken defensively.
+STRAY=$(xdotool search --name '^GuidePilot Demo Application$' 2>/dev/null | wc -l || true)
+if [ "$STRAY" -gt 0 ]; then
+  echo "A GuidePilot Demo Application window is already open ($STRAY window(s))." >&2
+  echo "Close it first: ./scripts/demo-pid.sh stop" >&2
+  exit 1
+fi
+
 echo "==> starting demo application"
 # A stale state file from an earlier run would make a failed run look correct.
 rm -f "$STATE_FILE"

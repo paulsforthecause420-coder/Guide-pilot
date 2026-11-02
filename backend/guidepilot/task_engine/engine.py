@@ -13,6 +13,8 @@ Adaptation is bounded: after repeated failed verifications the task becomes
 
 from __future__ import annotations
 
+import os
+import sys
 import threading
 import time
 from dataclasses import replace
@@ -261,35 +263,80 @@ class TaskEngine:
         if not any(rule.kind == "element_value_equals" for rule in step.rules):
             return
         rect = guidance.highlight.rect
+        pixels = self._field_pixels(rect)
+        if pixels is None:
+            return
+        self._field_baselines[step.id] = (rect.to_list(), pixels)
+
+    def _field_pixels(self, rect: Rect) -> bytes | None:
+        """One field's pixels, taken from the target window rather than the screen.
+
+        A screen grab of the region contains whatever is drawn on top of it, and
+        while a step is active that is GuidePilot's own highlight: baseline and
+        check would both be pictures of the overlay and the field would look
+        untouched no matter what the user typed. The window's own contents are the
+        field's real appearance.
+        """
+        task = self.current_task
+        observation = task.observation if task is not None else None
+        frame = observation.frame if observation is not None else None
+        if observation is not None and frame is not None:
+            png = self.observer.frame_png(observation.id)
+            if png:
+                scale = frame.scale or 1.0
+                box = (
+                    int((rect.x - frame.rect.x) * scale),
+                    int((rect.y - frame.rect.y) * scale),
+                    int((rect.x - frame.rect.x + rect.width) * scale),
+                    int((rect.y - frame.rect.y + rect.height) * scale),
+                )
+                cropped = change.crop_png(png, box)
+                if cropped:
+                    return cropped
         try:
             capture = self.observer.backend.capture_rect(rect)
         except Exception:  # pragma: no cover - capture is best effort
-            return
-        if capture is None or not capture.png:
-            return
-        self._field_baselines[step.id] = (rect.to_list(), capture.png)
+            return None
+        return capture.png if capture is not None and capture.png else None
 
     def _field_changed_since_baseline(self, step: Step, rect: list[int]) -> bool | None:
-        """True when the highlighted region visibly changed since the baseline."""
+        """True when the highlighted region visibly changed since the baseline.
+
+        Two measurements, because a text field can be filled without changing its
+        overall appearance: a coarse perceptual ratio catches a recoloured or
+        emptied region, while the glyph count catches the small, sharp change that
+        thousands of characters of typed text actually make.
+        """
         baseline = self._field_baselines.get(step.id)
         if baseline is None:
             return None
         baseline_rect, baseline_png = baseline
         if [int(v) for v in baseline_rect] != [int(v) for v in rect]:
             return None
-        try:
-            capture = self.observer.backend.capture_rect(Rect(*[int(v) for v in rect]))
-        except Exception:  # pragma: no cover - capture is best effort
-            return None
-        if capture is None or not capture.png:
+        pixels = self._field_pixels(Rect(*[int(v) for v in rect]))
+        if pixels is None:
             return None
         try:
             change_ratio, _ = change.compare(
-                change.signature_from_png(baseline_png), change.signature_from_png(capture.png)
+                change.signature_from_png(baseline_png), change.signature_from_png(pixels)
             )
         except Exception:  # pragma: no cover - undecodable frames are not evidence
-            return None
-        return change_ratio >= 0.02
+            change_ratio = 0.0
+        if change_ratio >= 0.02:
+            return True
+        before_ink = change.ink_count(baseline_png)
+        after_ink = change.ink_count(pixels)
+        if os.environ.get("GUIDEPILOT_DEBUG_VERIFY"):
+            print(
+                f"[verify] field ratio={change_ratio:.4f} ink={before_ink}->{after_ink} "
+                f"png_sizes={len(baseline_png)}/{len(pixels)}",
+                file=sys.stderr,
+                flush=True,
+            )
+        if before_ink is None or after_ink is None:
+            return change_ratio >= 0.02
+        # A caret is a corner of a character's worth of ink; typed text is not.
+        return (after_ink - before_ink) >= 40
 
     @staticmethod
     def _failed_on_blank_value(result: VerificationResult) -> bool:
@@ -314,10 +361,15 @@ class TaskEngine:
         user made, and accusing them would be a false failure.
         """
         baseline = self._field_baselines.get(step.id)
-        if baseline is None:
-            return result
-        changed = self._field_changed_since_baseline(step, baseline[0])
-        if changed is None:
+        changed = None if baseline is None else self._field_changed_since_baseline(step, baseline[0])
+        if os.environ.get("GUIDEPILOT_DEBUG_VERIFY"):
+            print(
+                f"[verify] refine step={step.id} outcome={result.outcome.value} "
+                f"baseline={'yes' if baseline else 'no'} changed={changed}",
+                file=sys.stderr,
+                flush=True,
+            )
+        if baseline is None or changed is None:
             return result
         label = step.target_description or step.title or "the field"
         failed_read = result.outcome == VerificationOutcome.FAILED

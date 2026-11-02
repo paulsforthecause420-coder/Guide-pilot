@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +31,10 @@ from typing import Any, Iterable, Sequence
 from .. import util
 from ..models import Element, ElementSource, Rect
 from . import gvariant
+
+# Accessibility calls are the most environment-dependent part of the product;
+# GUIDEPILOT_DEBUG_A11Y=1 makes every failure explain itself on stderr.
+_DEBUG_DIAGNOSTICS = bool(os.environ.get("GUIDEPILOT_DEBUG_A11Y"))
 
 A11Y_ROOT_PATH = "/org/a11y/atspi/accessible/root"
 A11Y_REGISTRY = "org.a11y.atspi.Registry"
@@ -145,6 +150,7 @@ class AtspiApp:
     dest: str
     name: str
     path: str = A11Y_ROOT_PATH
+    pid: int | None = None
 
 
 @dataclass
@@ -283,6 +289,11 @@ class AtspiClient:
             return True
         if not self._gdbus:
             return False
+        if os.environ.get("GUIDEPILOT_NO_A11Y_STATUS"):
+            # Diagnostic escape hatch: some platforms already treat GuidePilot as
+            # assistive technology, and announcing it again from this process is
+            # then redundant. Documented in docs/TESTING.md.
+            return False
         result = util.run_cmd(
             [
                 self._gdbus,
@@ -336,12 +347,62 @@ class AtspiClient:
         if not result.ok:
             if result.stderr:
                 self.last_error = util.truncated(result.stderr.strip(), 200)
+            if _DEBUG_DIAGNOSTICS:
+                # Opt-in (GUIDEPILOT_DEBUG_A11Y=1): support needs to see *which*
+                # accessibility call failed and what the bus said, because an
+                # empty field and a refused call look identical in the UI.
+                print(
+                    f"[a11y] {iface}.{method} {dest}{path} failed: {util.truncated((result.stderr or '').strip(), 200)}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             return None
         try:
             return gvariant.parse_call_result(result.stdout)
         except gvariant.GVariantError as exc:
             self.last_error = str(exc)
             return None
+
+    def _app_pid(self, dest: str, path: str) -> int | None:
+        """The owning process of an accessibility application, when published.
+
+        A killed Electron/Chromium process can stay registered on the bus with a
+        stale tree, and its windows share the application name and frame title of
+        the live one. Matching on the pid is what keeps guidance anchored to the
+        window the user is actually looking at instead of a ghost.
+        """
+        value = self._call(
+            dest,
+            path,
+            "org.freedesktop.DBus.Properties",
+            "Get",
+            "org.a11y.atspi.Application",
+            "ProcessId",
+        )
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            digits = "".join(ch for ch in value if ch.isdigit())
+            return int(digits) if digits else None
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                nested = self._app_pid_from_value(item)
+                if nested is not None:
+                    return nested
+        return None
+
+    @staticmethod
+    def _app_pid_from_value(value: Any) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            digits = "".join(ch for ch in value if ch.isdigit())
+            return int(digits) if digits else None
+        return None
 
     def _properties_all(self, dest: str, path: str) -> dict[str, Any]:
         """Fetch all Accessible properties in one round-trip (name, child count, interfaces)."""
@@ -425,6 +486,16 @@ class AtspiClient:
             cleaned = value.replace("\ufffc", "").strip()
             if cleaned:
                 return util.truncated(cleaned, 4000)
+        if _DEBUG_DIAGNOSTICS:
+            first = self._call(dest, path, "org.a11y.atspi.Text", "GetText", "0", "1")
+            short = self._call(dest, path, "org.a11y.atspi.Text", "GetText", "0", "50")
+            name = self._property(dest, path, "Name")
+            print(
+                f"[a11y] text empty for {dest}{path}: full={value!r} first={first!r} "
+                f"short={short!r} name={name!r} error={self.last_error!r}",
+                file=sys.stderr,
+                flush=True,
+            )
         return None
 
     def _combo_value(self, dest: str, path: str) -> str | None:
@@ -472,7 +543,7 @@ class AtspiClient:
             name = self._property(dest, path, "Name")
             if not name:
                 return None
-            return AtspiApp(dest=dest, name=name, path=path)
+            return AtspiApp(dest=dest, name=name, path=path, pid=self._app_pid(dest, path))
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             for app in pool.map(describe, children):
@@ -498,17 +569,30 @@ class AtspiClient:
             self._frame_cache[app.dest] = (util.now_ms(), frames)
         return frames
 
-    def find_app(self, hint: str | None, title: str | None = None) -> AtspiApp | None:
+    def find_app(self, hint: str | None, title: str | None = None, pid: int | None = None) -> AtspiApp | None:
         """Find the accessibility application that owns the observed window.
 
-        Toolkit name is matched first (cheap). Browser-based apps report generic
-        foundation names (``electron``, ``chromium``, ``firefox``), so a window
-        title match against the app's frames disambiguates them. Frame titles are
-        cached for a moment to keep repeated observations cheap.
+        The process id is authoritative when the bus publishes it: several
+        instances of one application (and dead ones that never unregistered)
+        share its name and window titles, and reading the wrong tree means
+        highlighting rectangles that belong to a window the user is not looking
+        at. Toolkit name and frame title matching remain the fallback for toolkits
+        that do not publish a pid.
         """
         apps = self.apps()
         if not apps:
             return None
+        if pid:
+            reporting = [app for app in apps if app.pid is not None]
+            if reporting:
+                exact = [app for app in reporting if app.pid == pid]
+                if exact:
+                    apps = exact
+                else:
+                    # The bus knows which processes own which trees, and none of
+                    # them is the window in front of the user: grounding on any
+                    # of them would be guesswork.
+                    return None
         needle = util.normalize_text(hint or "")
         title_norm = util.normalize_text(title or "")
         generic = {"electron", "chromium", "chrome", "chrome browser", "browser", "node", "unknown"}
@@ -562,6 +646,7 @@ class AtspiClient:
         app_hint: str | None = None,
         window_title: str | None = None,
         window_rect: Rect | None = None,
+        window_pid: int | None = None,
         max_nodes: int | None = None,
         include_values: bool = True,
         retry: bool = True,
@@ -572,7 +657,7 @@ class AtspiClient:
         if not self._gdbus:
             return AtspiSnapshot(False, notes=["gdbus is not installed"], duration_ms=util.now_ms() - started)
         self.ensure_status_enabled()
-        app = self.find_app(app_hint, window_title)
+        app = self.find_app(app_hint, window_title, pid=window_pid)
         if app is None:
             return AtspiSnapshot(
                 False,
@@ -734,7 +819,15 @@ class AtspiClient:
             best_notes: list[str] = []
             for delay in (0.4, 0.8, 1.4):
                 time.sleep(delay)
-                attempt = self.snapshot(app_hint, window_title, window_rect, max_nodes, include_values, retry=False)
+                attempt = self.snapshot(
+                    app_hint,
+                    window_title,
+                    window_rect,
+                    window_pid,
+                    max_nodes,
+                    include_values,
+                    retry=False,
+                )
                 if len(attempt.elements) > len(best):
                     best = attempt.elements
                     best_notes = attempt.notes
@@ -765,9 +858,15 @@ class AtspiClient:
         app_hint: str | None = None,
         window_title: str | None = None,
         window_rect: Rect | None = None,
+        window_pid: int | None = None,
     ) -> Element | None:
         """Fetch one element by label (used by verification and adaptive re-checks)."""
-        snapshot = self.snapshot(app_hint=app_hint, window_title=window_title, window_rect=window_rect)
+        snapshot = self.snapshot(
+            app_hint=app_hint,
+            window_title=window_title,
+            window_rect=window_rect,
+            window_pid=window_pid,
+        )
         target = util.normalize_text(label)
         role_filter = set(roles or [])
         best: tuple[float, Element] | None = None

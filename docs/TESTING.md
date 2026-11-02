@@ -94,7 +94,15 @@ Real desktops are asynchronous. The scenario therefore:
 * stops at the first genuine failure and reports the evidence, instead of pushing
   on and reporting a green run built on unverified steps.
 
-If the run fails: check `app.log` for `[backend]` lines, confirm
+If the run fails, re-run it with diagnostics: `GUIDEPILOT_DEBUG_A11Y=1` logs
+every failed accessibility call and every empty text read, and
+`GUIDEPILOT_DEBUG_VERIFY=1` logs what the pixel fallback measured (field
+change ratio, ink before/after, image sizes). Both appear in `app.log` with a
+`[backend]` prefix. `GUIDEPILOT_NO_A11Y_STATUS=1` suppresses the accessibility
+status announcement, for platforms that already treat GuidePilot as assistive
+technology.
+
+Then check `app.log` for `[backend]` lines, confirm
 `xdotool getactivewindow getwindowname` reports the demo window, and verify the
 accessibility tree is populated:
 

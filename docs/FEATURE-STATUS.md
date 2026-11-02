@@ -56,11 +56,21 @@ demo application in `demo-app/`.
 * Applications that publish neither accessibility data nor readable text can be
   highlighted but their field contents cannot be verified; the app says so rather
   than guessing.
-* On the reference desktop, this Electron/Chromium build reads a typed entry back
-  as empty in some sessions even though the text is on screen, so the live
-  acceptance run stops at step 1 by design (it never claims an unverified pass).
-  The pixel baseline now distinguishes that case from "nothing was typed", and
-  installing `tesseract-ocr` would let the OCR path read the value itself.
+* The live acceptance run stops at step 1 on this machine (it never claims an
+  unverified pass). Measured with `GUIDEPILOT_DEBUG_A11Y=1` and
+  `GUIDEPILOT_DEBUG_VERIFY=1`, two things are true at the same time inside the
+  running product, while a standalone client reads the same field perfectly:
+  Chromium answers `Text.GetText` with an empty string for an entry that visibly
+  contains text, and the cropped field pixels are a flat block, because
+  GuidePilot's own highlight is drawn over the field it is asking about. Running
+  the identical launch and read outside GuidePilot yields the real value, so the
+  trigger is the overlay window sitting on top of the target. Until the overlay
+  is hidden for the measurement (or OCR reads the text back with
+  `tesseract-ocr`), a text step on a Chromium target can only be reported as
+  "cannot confirm", which is what the run reports.
+* GTK/Qt applications publish no accessible tree on this machine at all (the GTK
+  ATK bridge module is not installed), so only Chromium/Electron targets were
+  available for live testing.
 * Canvas-based interfaces (games, some design tools) have no elements to ground
   on; only OCR text can help, and only when `tesseract` is installed.
 * The local planner understands forms and terminal-style work. Anything else is
